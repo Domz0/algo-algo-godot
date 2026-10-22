@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $projectPath = Split-Path -Parent $PSScriptRoot
 $logPath = Join-Path $projectPath '.godot/test-logs'
 New-Item -ItemType Directory -Path $logPath -Force | Out-Null
-$suites = @('run_tests', 'run_scene_tests', 'run_logistics_tests', 'run_acquisition_tests', 'run_extended_tests')
+$suites = @('run_tests', 'run_scene_tests', 'run_logistics_tests', 'run_acquisition_tests', 'run_extended_tests', 'run_revision_tests', 'run_administration_tests')
 $failedSuites = @()
 foreach ($suite in $suites) {
     $logFile = Join-Path $logPath ($suite + '.log')
@@ -31,5 +31,5 @@ if ($failedSuites.Count -gt 0) {
     Write-Output ('Suites fallidas: ' + ($failedSuites -join ', '))
     exit 1
 }
-Write-Output 'Las cinco suites terminaron sin fallos ni errores de GDScript.'
+Write-Output 'Las siete suites terminaron sin fallos ni errores de GDScript.'
 exit 0

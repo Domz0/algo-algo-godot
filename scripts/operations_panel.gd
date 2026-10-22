@@ -7,7 +7,7 @@ var machine_view: TextEdit
 var action_input: OptionButton
 var amount_input: SpinBox
 var apply_button: Button
-var action_codes: Array[String] = ["inputs", "spares", "expand", "hire", "fire", "machine", "retire", "maintenance", "preventive_on", "preventive_off"]
+var action_codes: Array[String] = ["spares", "expand", "machine", "retire", "maintenance", "preventive_on", "preventive_off", "buy_vehicle", "sell_vehicle"]
 
 
 func _ready() -> void:
@@ -16,10 +16,11 @@ func _ready() -> void:
 	add_child(summary)
 	machine_view = TextEdit.new()
 	machine_view.editable = false
+	machine_view.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	machine_view.custom_minimum_size.y = 100
 	add_child(machine_view)
 	action_input = OptionButton.new()
-	for label in ["Comprar insumos", "Comprar repuestos", "Ampliar bodega", "Contratar empleados", "Despedir empleados", "Comprar máquinas", "Retirar máquina (ID)", "Mantenimiento correctivo (ID)", "Programar preventivo (ID)", "Desactivar preventivo (ID)"]:
+	for label in ["Comprar repuestos", "Ampliar bodega", "Comprar máquinas", "Retirar máquina (ID)", "Mantenimiento correctivo (ID)", "Programar preventivo (ID)", "Desactivar preventivo (ID)", "Comprar vehículos", "Vender vehículos"]:
 		action_input.add_item(label)
 	add_child(action_input)
 	var row := HBoxContainer.new()
@@ -48,10 +49,13 @@ func refresh(company) -> void:
 	## Separa saldos actuales, resultados del cierre anterior y movimientos aún sin cerrar.
 	var ops = company.operations
 	var warehouse = ops.warehouse
-	summary.text = "Bodega: total %d | ocupada %d | libre %d\nInsumos %d | Repuestos %d | Terminados %d\nEmpleados %d | Salarios %.2f | Salarios pendientes %.2f\nInsumos consumidos al costo %.2f | Mantenimiento %.2f\nIntereses %.2f | Deuda pagarés %.2f | Beneficio neto %.2f\nPatrimonio al costo %.2f | Caja entre cierres %+.2f\nLimitaciones: %s" % [warehouse.capacity, warehouse.occupied(company.inventory), warehouse.available(company.inventory), warehouse.inputs, warehouse.spares, company.inventory, ops.employees, ops.salary_expense, company.wages_payable, ops.materials_consumed, ops.maintenance_expense, company.interest_expense, company.note_debt, company.net_profit, company.equity(), company.cash - company.cash_at_period_start, "; ".join(ops.penalties)]
+	summary.text = "BODEGA\nCapacidad %d · ocupada %d · libre %d\nInsumos %d · repuestos %d · terminados %d\n\nPRODUCCIÓN\nMáquinas %d · capacidad %d · producidas %d\nInsumos consumidos %.2f · mantenimiento %.2f" % [warehouse.capacity, warehouse.occupied(company.inventory), warehouse.available(company.inventory), warehouse.inputs, warehouse.spares, company.inventory, ops.machines.size(), company.capacity, company.production, ops.materials_consumed, ops.maintenance_expense]
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	summary.text += "\nValor estimado (no caja): %.2f" % company.estimated_value()
-	summary.custom_minimum_size.x = 410
+	var fleet = company.own_fleet
+	if fleet != null:
+		summary.text += "\n\nTRANSPORTE PROPIO\nVehículos %d · conductores %d\nCapacidad nominal %d · financiable %d\nFijos %.2f · combustible %.2f · por pagar %.2f\nArrendado %d · entregado %d / %d" % [fleet.vehicles, fleet.employees, company.own_logistics_capacity, fleet.effective_capacity, fleet.fixed_expense, fleet.fuel_expense, fleet.payable, company.contracted_capacity, company.distributed_units, company.distribution_limit]
+	if not ops.penalties.is_empty():
+		summary.text += "\n\nAviso: " + ops.penalties[-1]
 	var lines := PackedStringArray()
 	for machine in ops.machines:
 		lines.append("#%d: capacidad %d, eficiencia %.2f, desgaste %.2f\n  Personal %d, insumos/u %d; preventivo %s, ciclos %d/%d\n  Mantenimiento: %d repuestos + %.2f; valor contable %.2f" % [machine.id, machine.capacity, machine.efficiency(), machine.wear, machine.staff_required, machine.inputs_per_unit, "sí" if machine.preventive else "no", machine.operating_cycles, machine.maintenance_interval, machine.maintenance_spares, machine.maintenance_labor, machine.book_value])

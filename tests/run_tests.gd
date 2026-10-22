@@ -36,8 +36,7 @@ func _near(actual: float, expected: float, description: String) -> void:
 func _accounting_config():
 	## Escenario calculable a mano: 20 compradores, una oferta y opción externa iguales.
 	var config = _legacy_config()
-	config.market_demand = 20
-	config.brand_strength = 0.0
+	config.market_demand = 10
 	config.companies[0].merge({"cash": 1000.0, "price": 20.0, "production_target": 20, "variable_cost": 5.0, "fixed_cost": 10.0}, true)
 	config.companies[1].production_target = 0
 	return config
@@ -93,27 +92,22 @@ func _test_demand() -> void:
 		# Esta prueba aísla preferencias; la capacidad limitada se prueba en logística.
 		company.own_logistics_capacity = 1000
 		company.price = 20.0
-		company.brand = 0.0
 	var equal: Array[int] = DemandRules.allocate(sim.state.companies, config)
-	_check(equal == [40, 40], "Mercado compartido con 40 compradores que no compran")
+	_check(equal == [60, 60], "Mercado compartido con precios iguales y demanda limitada")
 	sim.state.companies[0].price = 40.0
 	var expensive: Array[int] = DemandRules.allocate(sim.state.companies, config)
 	_check(expensive[0] < equal[0], "Subir el precio reduce ventas propias")
-	_check(expensive[0] + expensive[1] < 80, "El precio también reduce ventas totales")
+	_check(expensive[0] + expensive[1] < 120, "El precio también reduce ventas totales")
 	sim.state.companies[0].price = 20.0
-	sim.state.companies[0].brand = 1.0
-	var branded: Array[int] = DemandRules.allocate(sim.state.companies, config)
-	_check(branded[0] > equal[0], "La marca aumenta demanda propia")
 	sim.state.companies[0].inventory = 0
 	var unavailable: Array[int] = DemandRules.allocate(sim.state.companies, config)
-	_check(unavailable[0] == 0 and unavailable[1] == 60, "Sin stock no participa; el rival recibe más demanda")
+	_check(unavailable[0] == 0 and unavailable[1] == 120, "Sin stock no participa; el rival recibe más demanda")
 	sim.state.companies[0].inventory = 1
 	var scarce: Array[int] = DemandRules.allocate(sim.state.companies, config)
 	_check(scarce[0] == 1, "No se vende más que el stock disponible")
 	config.market_demand = 0
 	_check(DemandRules.allocate(sim.state.companies, config) == [0, 0], "Demanda cero no crea ventas")
 	config.market_demand = 1
-	sim.state.companies[0].brand = 0.0
 	_check(DemandRules.allocate(sim.state.companies, config) == [1, 0], "Empate de redondeo determinista sin duplicar compradores")
 
 
@@ -180,7 +174,7 @@ func _test_long_run() -> void:
 			_near(company.cash, prior_cash[index] + company.revenue - company.production_spending - company.fixed_cost_paid, "Conservación de caja")
 			_near(company.equity(), prior_equity[index] + company.operating_profit, "Conservación patrimonial")
 			_near(company.cash, twin.state.companies[index].cash, "Reproducibilidad sin reloj gráfico")
-		_check(total_sales <= sim.config.market_demand and sim.state.unserved_demand == sim.config.market_demand - total_sales, "Conservación del mercado compartido")
+		_check(total_sales <= sim.config.market_demand and sim.state.unserved_demand == sim.state.estimated_demand - total_sales, "Conservación del mercado compartido")
 
 
 func _legacy_config():

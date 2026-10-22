@@ -21,6 +21,7 @@ static func acquire(state, buyer_index: int, quoted_price: float) -> Dictionary:
 	var buyer = state.companies[buyer_index]
 	var previous_owner: String = operator.owner
 	# El pago va al vendedor externo, no a la caja de la empresa comprada.
+	buyer.finance.category = "Adquisición de logística"
 	buyer.cash -= price
 	buyer.logistics_investment += price
 	operator.owner_company_index = buyer_index

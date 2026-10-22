@@ -1,5 +1,5 @@
 extends SceneTree
-## Pruebas de integración: campos y botones reales, resultados visibles y publicidad.
+## Pruebas de integración: campos y botones reales, resultados visibles.
 
 const Config = preload("res://economy/economy_config.gd")
 const Simulation = preload("res://economy/simulation.gd")
@@ -77,61 +77,14 @@ func _run() -> void:
 	_check(panel.metrics.production.text == "5 / 100" and panel.metrics.sales.text == "5", "Cambio de producción visible")
 	scene.queue_free()
 
-	scene = _scene()
-	panel = scene.company_panels[0]
-	panel.advertising_input.get_line_edit().text = "100"
-	scene.apply_button.pressed.emit()
-	company = scene.simulation.state.companies[0]
-	var initial_brand: float = company.brand
-	var initial_cash: float = company.cash
-	var event_count: int = scene.simulation.state.events.size()
+	var observed = Simulation.new(_legacy_config())
+	var initial_cash: float = observed.state.companies[0].cash
 	for unused in range(3):
-		scene.simulation.estimate_next_sales()
-	_near(company.cash, initial_cash, "Estimar no gasta caja")
-	_near(company.brand, initial_brand, "Estimar no aumenta marca")
-	_check(scene.simulation.state.events.size() == event_count, "Estimar no crea eventos")
-	scene.advance_button.pressed.emit()
-	_near(company.advertising_spending, 100.0, "Campaña pagada")
-	_near(company.brand, 0.45, "Marca aumenta según configuración")
-	_check(company.sales > baseline.state.companies[0].sales, "Publicidad modifica ventas")
-	_near(company.cash, initial_cash + company.revenue - company.production_spending - company.fixed_cost_paid - 100.0, "Publicidad incluida en caja")
-	_near(company.equity(), initial_cash + company.operating_profit, "Publicidad incluida en beneficio")
-	_check(panel.metrics.advertising.text == "100.00" and panel.metrics.brand.text == "0.450", "Publicidad visible")
-	_check(not scene.simulation.set_decision(0, 20.0, 80, -1.0), "Rechaza publicidad negativa")
-	_check(not scene.simulation.set_decision(0, 20.0, 80, NAN), "Rechaza publicidad NaN")
-	_check(not scene.simulation.set_decision(0, 20.0, 80, 1001.0), "Rechaza publicidad sobre el límite")
-	scene.queue_free()
-	_test_advertising_limits()
-	print("Integración etapa 2: %d comprobaciones, %d fallos." % [checks, failures])
+		observed.estimate_next_sales()
+	_near(observed.state.companies[0].cash, initial_cash, "Estimar no gasta caja")
+	_check(observed.state.events.is_empty(), "Estimar no crea eventos")
+	print("Integración de pantalla: %d comprobaciones, %d fallos." % [checks, failures])
 	quit(0 if failures == 0 else 1)
-
-
-func _test_advertising_limits() -> void:
-	## Verifica caja escasa, marca saturada, ausencia de ventas y registro acotado.
-	var config = _legacy_config()
-	config.market_demand = 0
-	config.companies[0].cash = 65.0
-	var sim = Simulation.new(config)
-	sim.set_decision(0, 20.0, 0, 100.0)
-	sim.advance_cycle()
-	var company = sim.state.companies[0]
-	_near(company.advertising_spending, 5.0, "Solo se gasta caja restante")
-	_near(company.cash, 0.0, "Publicidad no crea caja negativa")
-	_near(company.operating_profit, -65.0, "Pérdida incluye fijo y campaña")
-	_near(company.market_share, 0.0, "Sin ventas cuota cero")
-	_check(sim.state.events.size() > 0, "Problemas económicos generan eventos")
-	sim.advance_cycle()
-	_near(company.advertising_spending, 0.0, "Suspensión no gasta publicidad")
-	config = _legacy_config()
-	config.companies[0].cash = 10000.0
-	sim = Simulation.new(config)
-	sim.set_decision(0, 20.0, 0, 1000.0)
-	sim.advance_cycle()
-	_near(sim.state.companies[0].brand, 1.0, "Marca limitada a uno")
-	for day in range(150):
-		sim.advance_cycle()
-	_check(sim.state.events.size() == 100, "Registro conserva solo cien eventos")
-
 
 func _legacy_config():
 	## Aísla regresiones de etapas 1–4 sin recursos adicionales; la etapa 5 tiene su propia suite.

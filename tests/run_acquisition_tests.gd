@@ -148,9 +148,8 @@ func _test_screen() -> void:
 	var scene = load("res://scenes/main.tscn").instantiate()
 	scene.simulation = Simulation.new(_config())
 	root.add_child(scene)
-	var panel = scene.logistics_panel
+	var panel = scene.rental_panels[1]
 	_check(panel.purchase_label.text.contains("1800.00"), "Precio real visible")
-	panel.buyer_input.select(1)
 	panel.purchase_button.pressed.emit()
 	_check(scene.simulation.state.logistics.owner_company_index == 1, "Botón compra para jugador seleccionado")
 	_check(panel.purchase_result.text.contains("Compra completada") and panel.purchase_button.disabled, "Resultado y estado adquirido visibles")

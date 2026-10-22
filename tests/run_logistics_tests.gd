@@ -30,7 +30,6 @@ func _config():
 	var config = _legacy_config()
 	# El ejemplo contable aísla el valor base de la revalorización de la etapa 4.
 	config.logistics_value_growth_rate = 0.0
-	config.brand_strength = 0.0
 	config.companies[0].merge({"cash": 1000.0, "production_target": 20, "variable_cost": 5.0, "fixed_cost": 10.0, "own_logistics_capacity": 5}, true)
 	return config
 
@@ -175,7 +174,7 @@ func _test_many_cycles() -> void:
 			var client = sim.state.companies[index]
 			cash_after += client.cash
 			cash_from_market += client.revenue
-			external_spending += client.production_spending + client.fixed_cost_paid + client.advertising_spending
+			external_spending += client.production_spending + client.fixed_cost_paid
 			reserved_sum += client.contracted_capacity
 			prepaid_sum += client.prepaid_logistics
 			_check(client.sales <= client.distribution_limit and client.inventory >= 0 and client.cash >= 0.0, "Límites físicos y caja no negativa")

@@ -8,15 +8,9 @@ var seconds_per_cycle: float = 2.0
 var market_demand: int = 120
 var reference_price: float = 20.0
 var price_elasticity: float = 1.5
-var brand_strength: float = 1.0
-# Peso de no comprar: evita que toda la demanda compre incluso a precios enormes.
-var outside_option_weight: float = 1.0
 # Límites de decisiones: evitan divisiones por cero y entradas fuera del modelo.
 var minimum_price: float = 0.01
 var maximum_price: float = 10000.0
-# Publicidad por día: primero se financian apertura y producción; luego la campaña.
-var maximum_advertising: float = 1000.0
-var advertising_brand_gain: float = 0.002
 # Operador independiente: cobra por capacidad reservada, aunque no se utilice.
 var logistics_name: String = "Rutas de Nimbra"
 var logistics_owner: String = "Cooperativa ficticia Ardel"
@@ -58,12 +52,35 @@ var initial_employees: int = 4
 var wage_per_employee: float = 4.0
 var employee_work_capacity: int = 30
 var hiring_cost: float = 2.0
-var severance_cost: float = 3.0
+# Las vacantes se seleccionan por ciclo y esperan antes de poder trabajar.
+var hiring_speed: int = 2
+var hiring_delay: int = 1
+# Límites editables de las políticas; evitan objetivos numéricos sin sentido para esta localidad.
+var maximum_staff_target: int = 500
+var maximum_input_target: int = 100000
+var maximum_auto_purchase_budget: float = 1000000.0
+var auto_purchase_cash_reserve: float = 100.0
+# Presupuesto máximo conjunto; el precio de reserva extingue demanda extrema.
+var consumer_budget: float = 2400.0
+var choke_price_multiplier: float = 4.0
+var aggregate_sensitivity: float = 1.0
+# Dotación inicial financiada como patrimonio de apertura, independiente de la caja.
+var own_fleet_min: int = 2
+var own_fleet_max: int = 4
+var own_vehicle_capacity: int = 15
+var own_vehicle_cost: float = 180.0
+var own_drivers_per_vehicle: int = 1
+var own_driver_wage: float = 3.0
+var own_vehicle_maintenance: float = 1.0
+var own_fuel_per_unit: float = 0.2
+var own_vehicle_resale: float = 0.5
 var understaff_exponent: float = 1.0
 var excess_staff_penalty: float = 0.0
 var input_shortage_efficiency: float = 0.9
 var fuel_cost_per_delivery: float = 0.12
 var logistics_wage_per_delivery: float = 0.08
+# Cada trabajador eventual atiende hasta estas entregas; la remuneración sigue siendo a destajo.
+var logistics_units_per_worker: int = 20
 var fleet_maintenance_per_reserved_unit: float = 0.05
 var logistics_fixed_overhead: float = 1.0
 var logistics_auto_expand: bool = true
@@ -86,16 +103,24 @@ var investment_discount_days: int = 5
 var companies: Array[Dictionary] = [
 	{"name": "Empresa A", "cash": 800.0, "price": 20.0,
 	 "capacity": 100, "production_target": 80, "variable_cost": 6.0,
-	 "fixed_cost": 60.0, "brand": 0.25, "own_logistics_capacity": 45},
+	 "fixed_cost": 60.0, "own_logistics_capacity": 45},
 	{"name": "Empresa B", "cash": 1600.0, "price": 22.0,
 	 "capacity": 60, "production_target": 50, "variable_cost": 9.0,
-	 "fixed_cost": 60.0, "brand": 0.8, "own_logistics_capacity": 50}
+	 "fixed_cost": 60.0, "own_logistics_capacity": 50}
 ]
 
 
 func validation_errors() -> PackedStringArray:
 	## Rechaza escenarios inválidos antes de crear estados parcialmente utilizables.
 	var errors := PackedStringArray()
+	if maximum_staff_target < initial_employees or maximum_input_target < 0 or not is_finite(maximum_auto_purchase_budget) or maximum_auto_purchase_budget < 0.0 or not is_finite(auto_purchase_cash_reserve) or auto_purchase_cash_reserve < 0.0:
+		errors.append("Límites administrativos o reserva de compras inválidos.")
+	if logistics_units_per_worker < 1 or hiring_speed < 1 or hiring_delay < 1 or own_fleet_min < 0 or own_fleet_max < own_fleet_min or own_vehicle_capacity < 1 or own_drivers_per_vehicle < 0:
+		errors.append("Rango de flota o ritmo de contratación inválido.")
+	if not is_finite(own_vehicle_resale) or own_vehicle_resale < 0.0 or own_vehicle_resale > 1.0 or own_vehicle_cost <= 0.0:
+		errors.append("Valor de compra positivo y reventa entre cero y uno.")
+	if not is_finite(consumer_budget) or consumer_budget < 0.0 or not is_finite(choke_price_multiplier) or choke_price_multiplier <= 1.0 or not is_finite(aggregate_sensitivity) or aggregate_sensitivity <= 0.0:
+		errors.append("Presupuesto, precio de reserva o sensibilidad inválidos.")
 	if extended_economy:
 		if warehouse_min_capacity < initial_inputs + initial_spares or warehouse_max_capacity < warehouse_min_capacity:
 			errors.append("Las bodegas deben contener la dotación inicial y tener un rango válido.")
@@ -105,7 +130,7 @@ func validation_errors() -> PackedStringArray:
 		for value in [machine_purchase_capacity, machine_staff_required, machine_maintenance_interval, employee_work_capacity, logistics_expansion_units, note_maturity_days, investment_discount_days]:
 			if value <= 0:
 				errors.append("Capacidades e intervalos deben ser positivos.")
-		for value in [warehouse_expansion_unit_cost, input_price, spare_price, machine_purchase_cost, machine_maintenance_labor, machine_wear_per_cycle, wage_per_employee, hiring_cost, severance_cost, understaff_exponent, excess_staff_penalty, fuel_cost_per_delivery, logistics_wage_per_delivery, fleet_maintenance_per_reserved_unit, logistics_fixed_overhead, logistics_cash_reserve, credit_limit_per_client, note_interest_rate]:
+		for value in [warehouse_expansion_unit_cost, input_price, spare_price, machine_purchase_cost, machine_maintenance_labor, machine_wear_per_cycle, wage_per_employee, hiring_cost, own_vehicle_cost, own_driver_wage, own_vehicle_maintenance, own_fuel_per_unit, understaff_exponent, excess_staff_penalty, fuel_cost_per_delivery, logistics_wage_per_delivery, fleet_maintenance_per_reserved_unit, logistics_fixed_overhead, logistics_cash_reserve, credit_limit_per_client, note_interest_rate]:
 			if not is_finite(value) or value < 0.0:
 				errors.append("Costos y tasas ampliadas deben ser finitos y no negativos.")
 		for value in [machine_base_efficiency, overdue_efficiency, input_shortage_efficiency, logistics_expansion_utilization, transport_target_utilization, transport_price_adjustment, investment_discount]:
@@ -133,34 +158,34 @@ func validation_errors() -> PackedStringArray:
 		errors.append("La duración del ciclo debe ser positiva y finita.")
 	if market_demand < 0:
 		errors.append("La demanda no puede ser negativa.")
-	for value in [reference_price, minimum_price, maximum_price, outside_option_weight]:
+	for value in [reference_price, minimum_price, maximum_price]:
 		if not is_finite(value) or value <= 0.0:
-			errors.append("Los precios de referencia, límites y opción externa deben ser positivos.")
+			errors.append("Los precios de referencia, límites deben ser positivos.")
 	if minimum_price > maximum_price:
 		errors.append("El precio mínimo supera al máximo.")
-	for value in [price_elasticity, brand_strength, maximum_advertising, advertising_brand_gain]:
+	for value in [price_elasticity]:
 		if not is_finite(value) or value < 0.0:
-			errors.append("Elasticidad y fuerza de marca deben ser finitas y no negativas.")
+			errors.append("Elasticidad deben ser finitas y no negativas.")
 	if errors.is_empty():
 		# Valida el extremo de mayor atractivo para que ninguna decisión desborde cuotas.
-		var maximum_weight: float = (1.0 + brand_strength) * pow(reference_price / minimum_price, price_elasticity)
-		if not is_finite((2.0 * maximum_weight + outside_option_weight) * maxf(1.0, float(market_demand))):
+		var maximum_weight: float = pow(reference_price / minimum_price, price_elasticity)
+		if not is_finite((2.0 * maximum_weight) * maxf(1.0, float(market_demand))):
 			errors.append("Los parámetros de demanda exceden el rango numérico del modelo.")
 	if companies.size() != 2:
 		errors.append("Esta etapa requiere exactamente dos empresas humanas.")
 	for company in companies:
-		for key in ["name", "cash", "price", "capacity", "production_target", "variable_cost", "fixed_cost", "brand", "own_logistics_capacity"]:
+		for key in ["name", "cash", "price", "capacity", "production_target", "variable_cost", "fixed_cost", "own_logistics_capacity"]:
 			if not company.has(key):
 				errors.append("Falta el parámetro empresarial: " + key)
 		if errors.size() > 0:
 			continue
-		for key in ["cash", "price", "variable_cost", "fixed_cost", "brand"]:
+		for key in ["cash", "price", "variable_cost", "fixed_cost"]:
 			if not (company[key] is float or company[key] is int) or not is_finite(float(company[key])) or float(company[key]) < 0.0:
 				errors.append("Valor empresarial inválido: " + key)
 		for key in ["capacity", "production_target", "own_logistics_capacity"]:
 			if not company[key] is int or company[key] < 0:
 				errors.append("Se requieren unidades enteras no negativas: " + key)
 		if errors.size() == 0:
-			if company.price < minimum_price or company.price > maximum_price or company.brand > 1.0:
-				errors.append("Precio fuera de límites o marca fuera de [0, 1].")
+			if company.price < minimum_price or company.price > maximum_price:
+				errors.append("Precio fuera de límites.")
 	return errors

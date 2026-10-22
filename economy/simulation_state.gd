@@ -11,6 +11,7 @@ var cycle: int = 0
 var companies: Array = []
 var unserved_demand: int = 0
 var total_sales: int = 0
+var estimated_demand: int = 0
 var logistics
 var journal: Array[Dictionary] = []
 # El registro acotado evita crecimiento ilimitado durante sesiones automáticas.
@@ -35,6 +36,9 @@ func _init(config) -> void:
 		var company = CompanyState.new(parameters)
 		if config.extended_economy:
 			company.operations = OperationsState.new(config, rng, company.capacity)
+			company.own_fleet = preload("res://economy/own_fleet.gd").new()
+			company.own_fleet.initialize(config, config.random_seed + 1009 * (companies.size() + 1))
+			company.own_logistics_capacity = company.own_fleet.vehicles * config.own_vehicle_capacity
 			company.capacity = 0
 			for machine in company.operations.machines:
 				company.capacity += machine.capacity

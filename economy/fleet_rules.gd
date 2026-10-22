@@ -45,7 +45,12 @@ static func invest(state, config, client_index: int, units: int) -> Dictionary:
 	var client = state.companies[client_index]
 	if not is_finite(amount) or client.cash < amount:
 		return {"ok": false, "message": "Capital insuficiente para invertir."}
+	client.finance.category = "Inversión por descuento logístico"
 	client.cash -= amount
+	operator.finance.category = "Financiación de expansión por cliente"
+	operator.cash += amount
+	operator.finance.category = "Compra de flota logística"
+	operator.cash -= amount
 	client.discount_asset += amount
 	# La caja del operador recibe y paga exactamente el mismo importe al proveedor de flota.
 	operator.total_capacity += units
@@ -82,11 +87,20 @@ static func finish(state, config, reserved_today: int) -> void:
 	operator.staff_expense = operator.distributed_units * config.logistics_wage_per_delivery
 	operator.maintenance_expense = reserved_today * config.fleet_maintenance_per_reserved_unit
 	operator.fixed_expense = config.logistics_fixed_overhead
+	# Cuadrillas por entrega: personal eventual facturado por unidad, sin plantilla permanente.
+	operator.employees = int(ceil(float(operator.distributed_units) / config.logistics_units_per_worker))
+	var current_costs: Dictionary = {"Operación de contratos": operator.operating_costs, "Combustible logístico": operator.fuel_expense, "Personal logístico eventual": operator.staff_expense, "Mantenimiento logístico": operator.maintenance_expense, "Gastos fijos logísticos": operator.fixed_expense}
 	operator.operating_costs += operator.fuel_expense + operator.staff_expense + operator.maintenance_expense + operator.fixed_expense
-	operator.operating_payable += operator.operating_costs
-	var payment: float = minf(operator.cash, operator.operating_payable)
-	operator.cash -= payment
-	operator.operating_payable -= payment
+	var payment: float = 0.0
+	operator.operating_payable = 0.0
+	for category in current_costs:
+		var obligation: float = operator.payable_categories.get(category, 0.0) + current_costs[category]
+		var paid: float = minf(operator.cash, obligation)
+		operator.finance.category = category
+		operator.cash -= paid
+		payment += paid
+		operator.payable_categories[category] = obligation - paid
+		operator.operating_payable += obligation - paid
 	operator.revenue += operator.discount_income
 	operator.operating_profit = operator.revenue - operator.operating_costs
 	operator.net_profit = operator.operating_profit + operator.interest_income
@@ -100,6 +114,7 @@ static func finish(state, config, reserved_today: int) -> void:
 		var units: int = mini(config.logistics_expansion_units, config.logistics_max_capacity - operator.total_capacity)
 		var cost: float = units * config.logistics_expansion_unit_cost
 		if units > 0 and operator.operating_payable == 0.0 and operator.available_cash() - cost >= config.logistics_cash_reserve:
+			operator.finance.category = "Compra de flota logística"
 			operator.cash -= cost
 			operator.total_capacity += units
 			operator.expanded_units += units

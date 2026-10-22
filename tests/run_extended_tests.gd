@@ -69,7 +69,7 @@ func _test_cash_and_resources() -> void:
 	var before: float = client.cash
 	var predictions: Array[int] = sim.estimate_next_sales()
 	sim.advance_cycle()
-	_near(client.cash, before - client.fixed_cost_paid - client.operations.salary_expense - client.production_spending - client.advertising_spending + client.revenue, "Caja refleja costos pagados y ventas cobradas")
+	_near(client.cash, before - client.fixed_cost_paid - client.operations.salary_expense - client.production_spending - client.own_fleet.expense + client.revenue, "Caja refleja costos pagados y ventas cobradas")
 	_near(client.cash_flow, client.cash - 10000.0, "Flujo incluye compras entre cierres una sola vez")
 	_near(client.equity(), initial_equity + client.net_profit, "Patrimonio cambia por beneficio neto, no por comprar activos")
 	_check(client.sales == predictions[0], "Pronóstico no muta recursos y coincide con ventas")
@@ -94,12 +94,14 @@ func _test_staff_and_maintenance() -> void:
 	var excess = Simulation.new(_config())
 	excess.manage_operations(0, "hire", 2)
 	excess.advance_cycle()
+	excess.advance_cycle()
 	_check(excess.state.companies[0].production == normal.state.companies[0].production, "Reserva laboral no penaliza eficiencia por defecto")
 	_near(excess.state.companies[0].operations.salary_expense, 24.0, "Se paga todo el exceso de empleados")
 	var config = _config()
 	config.excess_staff_penalty = 0.1
 	var penalty = Simulation.new(config)
 	penalty.manage_operations(0, "hire", 5)
+	penalty.advance_cycle()
 	penalty.advance_cycle()
 	_check(penalty.state.companies[0].production < normal.state.companies[0].production, "Penalización opcional por exceso configurable")
 	var sim = Simulation.new(_config())
@@ -156,7 +158,8 @@ func _test_storage_and_market() -> void:
 	no_inputs.advance_cycle()
 	_check(no_inputs.state.companies[0].production == 0, "Falta total de insumos detiene producción")
 	var limited = Simulation.new(_config())
-	limited.state.companies[0].own_logistics_capacity = 2
+	limited.config.own_vehicle_capacity = 1
+	limited.state.companies[0].own_fleet.vehicles = 2
 	limited.advance_cycle()
 	_check(limited.state.companies[0].sales == 2 and limited.state.companies[0].inventory > 0, "Exceso sobre transporte queda almacenado")
 	var low_demand = _config()
@@ -185,7 +188,7 @@ func _test_fleet() -> void:
 	_check(idle.state.logistics.unit_rate < rate, "Ocio reduce tarifa")
 	_near(idle.state.logistics.fuel_expense, 0.0, "Sin entregas no consume combustible")
 	var active = Simulation.new(_config())
-	active.state.companies[0].own_logistics_capacity = 0
+	active.state.companies[0].own_fleet.vehicles = 0
 	active.request_contract(0, 20, 2)
 	active.advance_cycle()
 	_near(active.state.logistics.fuel_expense, active.state.logistics.distributed_units * config.fuel_cost_per_delivery, "Combustible por actividad real")
@@ -313,13 +316,13 @@ func _test_screen() -> void:
 	var scene = load("res://scenes/main.tscn").instantiate()
 	scene.simulation = Simulation.new(_config())
 	root.add_child(scene)
-	var panel = scene.company_panels[0].operations_panel
-	panel.amount_input.get_line_edit().text = "10"
-	panel.apply_button.pressed.emit()
+	var panel = scene.administration_panels[0]
+	panel.manual_amount.get_line_edit().text = "10"
+	panel.manual_button.pressed.emit()
 	_near(scene.simulation.state.companies[0].cash, 9980.0, "Botón de insumos cambia caja real")
-	_check(panel.summary.text.contains("Insumos 170"), "Inventario comprado visible")
+	_check(panel.supply_summary.text.contains("En bodega 170"), "Inventario comprado visible")
 	scene.advance_button.pressed.emit()
-	_check(panel.summary.text.contains("Beneficio neto"), "Desglose financiero visible")
+	_check(scene.reports_view.text.contains("Beneficio operativo"), "Desglose financiero visible")
 	var logistics = scene.logistics_panel
 	logistics.capacity_input.get_line_edit().text = "2"
 	logistics.investment_button.pressed.emit()

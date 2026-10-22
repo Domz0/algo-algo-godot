@@ -10,6 +10,14 @@ static func decide(company, config, action: String, amount: int) -> Dictionary:
 	var warehouse = ops.warehouse
 	if amount <= 0:
 		return {"ok": false, "message": "Se requiere una cantidad o identificador positivo."}
+	if action == "buy_vehicle" or action == "sell_vehicle":
+		return company.own_fleet.decide(company, config, action, amount)
+	if action == "cancel_vacancies":
+		if amount > ops.vacancies:
+			return {"ok": false, "message": "No hay tantas vacantes abiertas; los candidatos seleccionados conservan su incorporación."}
+		ops.vacancies -= amount
+		return {"ok": true, "message": "Vacantes canceladas sin reembolsar la selección ya pagada."}
+	company.finance.category = {"inputs": "Compra de insumos", "spares": "Compra de repuestos", "expand": "Ampliación de bodega", "hire": "Selección de personal", "fire": "Indemnizaciones", "machine": "Compra de maquinaria"}.get(action, action)
 	if action == "inputs" or action == "spares":
 		var price: float = config.input_price if action == "inputs" else config.spare_price
 		var units: int = mini(amount, warehouse.available(company.inventory))
@@ -45,7 +53,7 @@ static func decide(company, config, action: String, amount: int) -> Dictionary:
 		"fire":
 			if amount > ops.employees:
 				return {"ok": false, "message": "No hay tantos empleados contratados."}
-			cost = amount * config.severance_cost
+			cost = amount * config.wage_per_employee
 		"machine": cost = amount * config.machine_purchase_cost
 		_: return {"ok": false, "message": "Operación desconocida."}
 	if not is_finite(cost) or cost > company.cash:
@@ -56,7 +64,7 @@ static func decide(company, config, action: String, amount: int) -> Dictionary:
 			warehouse.capacity += amount
 			warehouse.construction_value += cost
 		"hire":
-			ops.employees += amount
+			ops.vacancies += amount
 			ops.pending_expenses += cost
 		"fire":
 			ops.employees -= amount
@@ -79,6 +87,7 @@ static func maintain(company, machine, in_cycle: bool) -> Dictionary:
 		parts_cost = warehouse.spares_value * machine.maintenance_spares / warehouse.spares
 	warehouse.spares -= machine.maintenance_spares
 	warehouse.spares_value = maxf(0.0, warehouse.spares_value - parts_cost)
+	company.finance.category = "Mantenimiento de maquinaria"
 	company.cash -= machine.maintenance_labor
 	if in_cycle:
 		ops.maintenance_expense += parts_cost + machine.maintenance_labor
@@ -94,6 +103,7 @@ static func prepare(company, config) -> void:
 	var ops = company.operations
 	var warehouse = ops.warehouse
 	ops.penalties.clear()
+	ops.wage = config.wage_per_employee
 	ops.salary_expense = ops.employees * config.wage_per_employee
 	ops.materials_consumed = 0.0
 	ops.maintenance_expense = ops.pending_maintenance
@@ -102,12 +112,14 @@ static func prepare(company, config) -> void:
 	ops.pending_maintenance = 0.0
 	company.wages_payable += ops.salary_expense
 	var salary_payment: float = minf(company.cash, company.wages_payable)
+	company.finance.category = "Salarios de producción"
 	company.cash -= salary_payment
 	company.wages_payable -= salary_payment
 	if company.wages_payable > 0.000001 or company.cash < company.fixed_cost:
 		ops.penalties.append("Producción suspendida: falta caja para salarios o apertura.")
 		return
 	company.fixed_cost_paid = company.fixed_cost
+	company.finance.category = "Costos fijos de producción"
 	company.cash -= company.fixed_cost
 	company.active_this_cycle = true
 	for machine in ops.machines:
@@ -147,6 +159,7 @@ static func prepare(company, config) -> void:
 		warehouse.inputs -= inputs_used
 		warehouse.inputs_value = maxf(0.0, warehouse.inputs_value - input_cost)
 		var payment: float = units * company.variable_unit_cost
+		company.finance.category = "Conversión de productos"
 		company.cash = maxf(0.0, company.cash - payment)
 		company.production_spending += payment
 		ops.materials_consumed += input_cost

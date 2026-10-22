@@ -15,7 +15,13 @@ var total_capacity: int
 var contracted_capacity: int = 0
 var unit_rate: float
 var fixed_fee: float
-var cash: float
+const CashBook = preload("res://economy/cash_book.gd")
+var finance = CashBook.new()
+var cash: float:
+	get:
+		return finance.balance
+	set(value):
+		finance.change_to(value)
 # Es una obligación por servicios aún no prestados, no ingreso ni dinero libre.
 var deferred_revenue: float = 0.0
 var revenue: float = 0.0
@@ -34,6 +40,9 @@ var receivables: float = 0.0
 var interest_income: float = 0.0
 var net_profit: float = 0.0
 var operating_payable: float = 0.0
+# Desglose de obligaciones: permite pagar atrasos sin confundirlos con gastos nuevos.
+var payable_categories: Dictionary = {}
+var employees: int = 0
 var fuel_expense: float = 0.0
 var staff_expense: float = 0.0
 var maintenance_expense: float = 0.0
@@ -54,7 +63,7 @@ func _init(config) -> void:
 	total_capacity = config.logistics_capacity
 	unit_rate = config.logistics_unit_rate
 	fixed_fee = config.logistics_contract_fee
-	cash = config.logistics_initial_cash
+	finance.initialize(config.logistics_initial_cash)
 	asset_value_per_unit = config.logistics_asset_value_per_unit
 	profit_multiple = config.logistics_profit_multiple
 	value_growth_rate = config.logistics_value_growth_rate

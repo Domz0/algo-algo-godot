@@ -14,12 +14,14 @@ static func prepare(company, config = null, reset: bool = true) -> void:
 		return
 	company.active_this_cycle = true
 	company.fixed_cost_paid = company.fixed_cost
+	company.finance.category = "Costos fijos de producción"
 	company.cash -= company.fixed_cost_paid
 	var units: int = mini(company.capacity, maxi(0, company.production_target))
 	if company.variable_unit_cost > 0.0:
 		units = mini(units, int(floor(company.cash / company.variable_unit_cost)))
 	company.production = units
 	company.production_spending = units * company.variable_unit_cost
+	company.finance.category = "Conversión de productos"
 	company.cash = maxf(0.0, company.cash - company.production_spending)
 	company.inventory += units
 	company.inventory_value += company.production_spending

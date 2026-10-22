@@ -1,32 +1,49 @@
 extends RefCounted
-## Reparte un único mercado entre empresas y la alternativa de no comprar.
+## Mercado finito con comparación de precios y presupuesto común limitado.
+
+
+static func weight(company, config) -> float:
+	## Precio de reserva: ninguna oferta extrema recibe compras garantizadas.
+	if not company.active_this_cycle or company.inventory <= 0 or company.logistics_capacity() <= 0 or company.price >= config.reference_price * config.choke_price_multiplier:
+		return 0.0
+	return pow(config.reference_price / company.price, config.price_elasticity)
+
+
+static func aggregate(companies: Array, config) -> int:
+	## D = base * clamp((reserva - precio_general)/(reserva - referencia),0,1)^sensibilidad.
+	## Precio general ponderado por atractivo; una oferta excluida no elimina compradores del rival.
+	var weighted_price: float = 0.0
+	var total: float = 0.0
+	for company in companies:
+		var attraction: float = weight(company, config)
+		total += attraction
+		weighted_price += company.price * attraction
+	if total <= 0.0 or config.consumer_budget <= 0.0:
+		return 0
+	var average: float = weighted_price / total
+	var reserve: float = config.reference_price * config.choke_price_multiplier
+	var factor: float = pow(clampf((reserve - average) / (reserve - config.reference_price), 0.0, 1.0), config.aggregate_sensitivity)
+	return int(floor(config.market_demand * factor))
 
 
 static func allocate(companies: Array, config) -> Array[int]:
-	## Peso = disponibilidad * (1 + fuerza_marca * marca) * (precio_ref / precio)^elasticidad.
-	## Disponibilidad exige stock y distribución; ventas limitadas por ambos recursos.
-	## Cuota = demanda * peso / (suma_pesos + peso_no_compra).
+	## Reparte compradores por pesos y restos mayores; cada grupo recibe la misma proporción
+	## del presupuesto. No reasigna clientes frustrados: stock, transporte y dinero limitan ventas.
+	var demand: int = aggregate(companies, config)
 	var weights: Array[float] = []
-	var total_weight: float = config.outside_option_weight
+	var total: float = 0.0
 	for company in companies:
-		var weight: float = 0.0
-		if company.active_this_cycle and company.inventory > 0 and company.logistics_capacity() > 0:
-			weight = (1.0 + config.brand_strength * company.brand) * pow(config.reference_price / company.price, config.price_elasticity)
-		weights.append(weight)
-		total_weight += weight
-	weights.append(config.outside_option_weight)
+		weights.append(weight(company, config))
+		total += weights.back()
 	var quotas: Array[int] = []
 	var remainders: Array[float] = []
 	var assigned: int = 0
-	for weight in weights:
-		var exact: float = config.market_demand * weight / total_weight
-		var whole: int = int(floor(exact))
-		quotas.append(whole)
-		remainders.append(exact - whole)
-		assigned += whole
-	# Restos mayores: redondea unidades sin crear compradores adicionales.
-	# Empates se resuelven por orden A, B, no compra, de forma reproducible.
-	for unused in range(config.market_demand - assigned):
+	for attraction in weights:
+		var exact: float = demand * attraction / total if total > 0.0 else 0.0
+		quotas.append(int(floor(exact)))
+		remainders.append(exact - floor(exact))
+		assigned += quotas.back()
+	for unused in range(demand - assigned):
 		var best: int = 0
 		for index in range(1, remainders.size()):
 			if remainders[index] > remainders[best]:
@@ -35,6 +52,8 @@ static func allocate(companies: Array, config) -> Array[int]:
 		remainders[best] = -1.0
 	var sales: Array[int] = []
 	for index in range(companies.size()):
-		# El cliente no vuelve a elegir si su empresa agota stock en este ciclo.
-		sales.append(mini(quotas[index], mini(companies[index].inventory, companies[index].logistics_capacity())))
+		var company = companies[index]
+		var budget: float = config.consumer_budget * weights[index] / total if total > 0.0 else 0.0
+		var affordable: int = int(floor(budget / company.price))
+		sales.append(mini(affordable, mini(quotas[index], mini(company.inventory, company.logistics_capacity()))))
 	return sales

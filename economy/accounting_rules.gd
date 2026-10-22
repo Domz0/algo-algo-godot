@@ -14,12 +14,15 @@ static func settle(company, units_sold: int, opening_cash: float) -> void:
 	if company.inventory == 0:
 		company.inventory_value = 0.0
 	company.revenue = company.sales * company.price
-	company.operating_costs = company.cost_of_goods_sold + company.fixed_cost_paid + company.advertising_spending + company.logistics_expense
+	company.operating_costs = company.cost_of_goods_sold + company.fixed_cost_paid + company.logistics_expense
 	if company.operations != null:
 		var ops = company.operations
 		company.operating_costs += ops.salary_expense + ops.maintenance_expense + ops.other_expense + company.discount_expense
+	if company.own_fleet != null:
+		company.operating_costs += company.own_fleet.expense
 	company.operating_profit = company.revenue - company.operating_costs
 	company.net_profit = company.operating_profit - company.interest_expense
+	company.finance.category = "Ventas cobradas"
 	company.cash += company.revenue
-	# Flujo = ingresos - producción pagada - fijo - publicidad; difiere del beneficio.
+	# Flujo = ingresos - producción pagada - fijo; difiere del beneficio.
 	company.cash_flow = company.cash - opening_cash

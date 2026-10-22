@@ -5,16 +5,18 @@ var company_name: String
 var human_controlled: bool = true
 # Capital inicial es la aportación de apertura; cash es el dinero gastable actual.
 var initial_capital: float
-var cash: float
+const CashBook = preload("res://economy/cash_book.gd")
+var finance = CashBook.new()
+var cash: float:
+	get:
+		return finance.balance
+	set(value):
+		finance.change_to(value)
 var price: float
 var capacity: int
 var production_target: int
 var variable_unit_cost: float
 var fixed_cost: float
-var brand: float
-# Presupuesto persistente; solo el gasto efectivamente financiado mejora la marca.
-var advertising_budget: float = 0.0
-var advertising_spending: float = 0.0
 var market_share: float = 0.0
 # El anticipo es un activo: se convierte en gasto al consumir días de contrato.
 var prepaid_logistics: float = 0.0
@@ -41,6 +43,7 @@ var operating_profit: float = 0.0
 var cash_flow: float = 0.0
 var active_this_cycle: bool = false
 # Recursos físicos y obligaciones se mantienen separados de caja y beneficios.
+var own_fleet
 var operations
 var wages_payable: float = 0.0
 var note_debt: float = 0.0
@@ -55,14 +58,13 @@ func _init(parameters: Dictionary) -> void:
 	## Copia los parámetros para que las decisiones no alteren el escenario original.
 	company_name = parameters.name
 	initial_capital = parameters.cash
-	cash = initial_capital
+	finance.initialize(initial_capital)
 	cash_at_period_start = cash
 	price = parameters.price
 	capacity = parameters.capacity
 	production_target = parameters.production_target
 	variable_unit_cost = parameters.variable_cost
 	fixed_cost = parameters.fixed_cost
-	brand = parameters.brand
 	own_logistics_capacity = parameters.own_logistics_capacity
 
 
@@ -78,7 +80,6 @@ func reset_cycle_results() -> void:
 	operating_profit = 0.0
 	cash_flow = 0.0
 	active_this_cycle = false
-	advertising_spending = 0.0
 	market_share = 0.0
 	logistics_expense = 0.0
 	distributed_units = 0
@@ -91,14 +92,20 @@ func reset_cycle_results() -> void:
 func equity() -> float:
 	## Los anticipos pendientes conservan valor hasta consumir el servicio reservado.
 	var resources: float = operations.asset_value() if operations != null else 0.0
-	return cash + inventory_value + prepaid_logistics + logistics_investment + resources + discount_asset - wages_payable - note_debt
+	var fleet_assets: float = own_fleet.book_value() - own_fleet.payable if own_fleet != null else 0.0
+	return fleet_assets + cash + inventory_value + prepaid_logistics + logistics_investment + resources + discount_asset - wages_payable - note_debt
 
 
 func logistics_capacity() -> int:
 	## Capacidad diaria habilitada por flota propia y reservas vigentes.
-	return own_logistics_capacity + contracted_capacity
+	return effective_own_capacity() + contracted_capacity
 
 
 func estimated_value() -> float:
 	## Referencia ficticia: patrimonio al costo más diez beneficios netos positivos del último día.
 	return maxf(0.0, equity() + 10.0 * maxf(0.0, net_profit))
+
+
+func effective_own_capacity() -> int:
+	## La flota financiable puede ser menor que la nominal por falta de combustible o salarios.
+	return own_fleet.effective_capacity if own_fleet != null else own_logistics_capacity

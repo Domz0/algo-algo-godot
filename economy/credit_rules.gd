@@ -63,9 +63,15 @@ static func pay(state, client_index: int, note_id: int, amount: float) -> Dictio
 		var interest_paid: float = minf(paid, note.interest_due)
 		note.interest_due -= interest_paid
 		note.principal = maxf(0.0, note.principal - (paid - interest_paid))
-		client.cash -= paid
+		client.finance.category = "Intereses pagados"
+		state.logistics.finance.category = "Intereses cobrados"
+		client.cash -= interest_paid
+		state.logistics.cash += interest_paid
+		client.finance.category = "Principal de deuda pagado"
+		state.logistics.finance.category = "Principal de deuda cobrado"
+		client.cash -= paid - interest_paid
 		client.note_debt = maxf(0.0, client.note_debt - paid)
-		state.logistics.cash += paid
+		state.logistics.cash += paid - interest_paid
 		state.logistics.receivables = maxf(0.0, state.logistics.receivables - paid)
 		note.payments.append({"cycle": state.cycle, "amount": paid, "interest": interest_paid})
 		if note.balance() < 0.0000001:

@@ -6,6 +6,15 @@ const CreditRules = preload("res://economy/credit_rules.gd")
 const FleetRules = preload("res://economy/fleet_rules.gd")
 
 
+static func quote(state, config, client_index: int, capacity: int, days: int) -> Dictionary:
+	## Cotización sin reservar ni cobrar; comparte tarifa y descuentos con la firma efectiva.
+	var rate: float = state.logistics.unit_rate
+	if config.extended_economy:
+		rate *= 1.0 - FleetRules.discount_for(state, client_index)
+	var daily: float = capacity * rate + state.logistics.fixed_fee
+	return {"rate": rate, "daily": daily, "total": daily * days}
+
+
 static func request(state, config, client_index: int, capacity: int, days: int, allow_credit: bool = false) -> Dictionary:
 	## Valida todo antes de mover dinero o capacidad; no hay reservas parcialmente aceptadas.
 	state.record_event("Solicitud logística: cliente %d, capacidad %d, duración %d días." % [client_index, capacity, days])
@@ -18,14 +27,13 @@ static func request(state, config, client_index: int, capacity: int, days: int, 
 		operator.requested_capacity += capacity
 	if capacity > operator.available_capacity():
 		return _reject(state, "Capacidad logística insuficiente.")
-	var rate: float = operator.unit_rate
+	var offer: Dictionary = quote(state, config, client_index, capacity, days)
+	var rate: float = offer.rate
 	if config.extended_economy:
-		var discount: float = FleetRules.discount_for(state, client_index)
 		for agreement in operator.investments:
 			if agreement.client_index == client_index and state.cycle < agreement.end_cycle and days > agreement.end_cycle - state.cycle:
 				return _reject(state, "El plazo supera la vigencia del descuento; solicita un contrato más corto.")
-		rate *= 1.0 - discount
-	var payment: float = (capacity * rate + operator.fixed_fee) * days
+	var payment: float = offer.total
 	var client = state.companies[client_index]
 	var financed: bool = payment > client.cash
 	if not is_finite(payment) or (financed and (not config.extended_economy or not allow_credit or not CreditRules.can_finance(state, config, client_index, payment))):
@@ -46,6 +54,8 @@ static func request(state, config, client_index: int, capacity: int, days: int, 
 	if financed:
 		CreditRules.issue(state, config, contract, payment)
 	else:
+		client.finance.category = "Transporte contratado"
+		operator.finance.category = "Anticipos de contratos"
 		client.cash -= payment
 		operator.cash += payment
 	client.prepaid_logistics += payment
@@ -71,6 +81,8 @@ static func cancel(state, contract_id: int) -> Dictionary:
 		if contract.status != "pendiente" or state.cycle >= contract.start_cycle:
 			return _reject(state, "El contrato no admite cancelación: debe cumplir su duración o ya terminó.")
 		var refund: float = contract.prepaid_balance
+		state.companies[contract.client_index].finance.category = "Devolución de anticipo"
+		state.logistics.finance.category = "Devolución de anticipo"
 		var client = state.companies[contract.client_index]
 		if contract.note_id >= 0:
 			var note = state.logistics.notes[contract.note_id - 1]
@@ -134,6 +146,7 @@ static func settle_day(state) -> void:
 		contract.served_days += 1
 	# Las tarifas cubren costos por validación; maxf solo elimina residuos de coma flotante.
 	if not operator.extended:
+		operator.finance.category = "Operación de contratos"
 		operator.cash = maxf(0.0, operator.cash - operator.operating_costs)
 	operator.cash_flow = -operator.operating_costs
 	operator.operating_profit = operator.revenue - operator.operating_costs
@@ -143,7 +156,7 @@ static func finish_day(state) -> void:
 	## Usa primero capacidad propia y libera reservas solo después del último servicio.
 	for client in state.companies:
 		client.distributed_units = client.sales
-		state.logistics.distributed_units += maxi(0, client.sales - client.own_logistics_capacity)
+		state.logistics.distributed_units += maxi(0, client.sales - client.effective_own_capacity())
 		if client.active_this_cycle and client.inventory > 0 and client.sales >= client.distribution_limit:
 			state.record_event("%s: límite de distribución alcanzado (%d); queda inventario sin vender." % [client.company_name, client.distribution_limit])
 	for contract in state.logistics.contracts:
